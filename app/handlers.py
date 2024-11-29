@@ -4,7 +4,7 @@ from aiogram.filters import CommandStart, Command
 from aiogram.types import Message
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
-from aiogram.types import ReplyKeyboardRemove, ContentType
+from aiogram.types import ReplyKeyboardRemove
 
 import app.keyboards as kb
 
