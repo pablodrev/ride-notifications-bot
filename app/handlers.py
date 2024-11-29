@@ -4,9 +4,16 @@ from aiogram.filters import CommandStart, Command
 from aiogram.types import Message
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
-from aiogram.types import ReplyKeyboardRemove
+from aiogram.types import ReplyKeyboardRemove, ContentType
+import json
+
+
+from datetime import datetime, timezone
 
 import app.keyboards as kb
+import app.database.requests as rq
+from app.database.requests import async_session 
+
 
 router = Router()
 
@@ -64,27 +71,35 @@ async def cmd_new_ride(message: Message, state: FSMContext):
 @router.message(F.text == "Мои поездки")
 async def cmd_my_rides(message: Message, state: FSMContext):
     user_id = message.from_user.id
-    if user_id not in rides:
-        answer = 'У вас нет сохраненных поездок.\nЧтобы создать поездку, выберите пункт меню "Новая поездка"'
-        reply_kb = kb.main
-    else:
-        answer = 'Ваши сохраненные поездки:\n'
-        count = 1
-        user_rides = rides[user_id]
-        for ride in user_rides:
-            answer += '\n{}. Место отправления: {}\nМесто назначения: {}\nВремя прибытия: {}\nТранспортное средство: {}\nВремя до уведомления: {} минут\n'.format(
-                count,
-                ride['location'],
-                ride['destination'],
-                ride['arrival_time'],
-                ride['transport'],
-                ride['notify_time_delta'],
-            )
-            count += 1
-        # answer += "\n\nЧтобы редактировать поездку, введите номер поездки"
-        reply_kb = kb.edit_delete_back
-        await state.set_state(choose_mode)
-    await message.answer(answer, reply_markup=reply_kb)
+    
+    async with async_session() as session:
+        user_rides = await rq.get_user_rides(user_id, session)
+
+    if not user_rides:
+        await message.answer(
+            'У вас нет сохраненных поездок.\nЧтобы создать поездку, выберите пункт меню "Новая поездка"',
+            reply_markup=kb.main
+        )
+        return
+
+    answer = 'Ваши сохраненные поездки:\n'
+    for count, ride in enumerate(user_rides, start=1):
+        # Преобразуем JSON в обычный формат
+        location = json.loads(ride.location)
+        destination = json.loads(ride.destination)
+        
+        answer += (
+            f"\n{count}. Место отправления: {location}\n"
+            f"Место назначения: {destination}\n"
+            f"Время прибытия: {ride.arrival_time}\n"
+            f"Транспортное средство: {ride.transport}\n"
+            f"Время до уведомления: {ride.notify_time_delta} минут(ы)\n"
+        )
+
+    await message.answer(answer, reply_markup=kb.edit_delete_back)
+
+
+    
 
 @router.message(choose_mode, F.text == "Редактировать")
 async def edit_ride(message: Message, state: FSMContext):
@@ -103,44 +118,56 @@ async def delete_ride(message: Message, state: FSMContext):
 
 @router.message(EditStates.ride_id)
 async def process_edit_ride_id(message: Message, state: FSMContext):
-    ride_id = int(message.text)
     user_id = message.from_user.id
-    if ride_id < 0 or ride_id > len(rides[user_id]):
-        await message.answer("Неправильный номер поездки")
-    else:
-        await state.update_data(ride_id = ride_id)
+    
+    try:
+        ride_id = int(message.text)
+    except ValueError:
+        await message.answer("Введите корректный номер поездки (целое число).")
+        return
+
+    async with async_session() as session:
+        user_rides = await rq.get_user_rides(user_id, session)
+
+        if not user_rides or ride_id < 1 or ride_id > len(user_rides):
+            await message.answer("Неправильный номер поездки.")
+            return
+
+        selected_ride = user_rides[ride_id - 1]
+
+        selected_ride_id = selected_ride.ride_id
+        await state.update_data(ride_id=selected_ride_id)
+
         state_data = await state.get_data()
         if state_data["choose_mode"] == "delete":
-             del rides[user_id][ride_id - 1]
-             if len(rides[user_id]) == 0:
-                  del rides[user_id]
-             await state.clear()
-             await message.answer(f"Поездка номер {ride_id} удалена.", reply_markup=kb.main)
+            await rq.delete_ride(selected_ride_id, session)
+            await state.clear()
+            await message.answer(f"Поездка номер {ride_id} удалена.", reply_markup=kb.main)
         else:
             await state.set_state(EditStates.parameter_to_edit)
-            await message.answer("Какой параметр поездки вы хотите изменить? Выберите в меню", reply_markup=kb.ride_params)
+            await message.answer(
+                "Какой параметр поездки вы хотите изменить? Выберите в меню",
+                reply_markup=kb.ride_params
+            )
+
 
 
 @router.message(F.text == "Место отправления", EditStates.parameter_to_edit)
 async def edit_location(message: Message, state: FSMContext):
     await state.set_state(EditStates.location)
     await message.answer("Для изменения начальной точки отправьте геолокацию, нажав на кнопку внизу.", reply_markup=kb.location)
+    
 
 @router.message(EditStates.location)
 async def process_new_location(message: Message, state: FSMContext):
-    await state.update_data(location=(message.location.latitude, message.location.longitude))
-    user_id = message.from_user.id
-    state_data = await state.get_data()
-    user_ride = rides[user_id][state_data["ride_id"] - 1]
-    user_ride["location"] = state_data["location"]
+    new_location = (message.location.longitude, message.location.latitude)
+    ride_id = (await state.get_data())['ride_id']
+    
+    async with async_session() as session:
+        await rq.update_ride(ride_id, {'location': json.dumps(new_location)}, session)
+        
     await state.clear()
-    await message.answer("Изменения сохранены. \n\nМесто отправления: {}\nМесто назначения: {}\nВремя прибытия: {}\nТранспортное средство: {}\nВремя до уведомления: {} минут".format(
-        user_ride['location'],
-        user_ride['destination'],
-        user_ride['arrival_time'],
-        user_ride['transport'],
-        user_ride['notify_time_delta'],
-    ), reply_markup=kb.main)
+    await message.answer("Место отправления обновлено.", reply_markup=kb.main)
 
 
 @router.message(F.text == "Место назначения", EditStates.parameter_to_edit)
@@ -150,22 +177,17 @@ async def edit_destination(message: Message, state: FSMContext):
 
 @router.message(EditStates.destination)
 async def process_new_destination(message: Message, state: FSMContext):
-        await state.update_data(destination=message.text)
-        user_id = message.from_user.id
-        state_data = await state.get_data()
-        user_ride = rides[user_id][state_data["ride_id"] - 1]
-        user_ride["destination"] = state_data["destination"]
-        await state.clear()
-        await message.answer("Изменения сохранены. \n\nМесто отправления: {}\nМесто назначения: {}\nВремя прибытия: {}\nТранспортное средство: {}\nВремя до уведомления: {} минут".format(
-            user_ride['location'],
-            user_ride['destination'],
-            user_ride['arrival_time'],
-            user_ride['transport'],
-            user_ride['notify_time_delta'],
-        ), reply_markup=kb.main)
+    ride_id = (await state.get_data())['ride_id']
+    new_destination = (message.location.longitude, message.location.latitude)
 
+    async with async_session() as session:
+        await rq.update_ride(ride_id, {'destination': new_destination}, session)
+              
+    await state.clear()
+    await message.answer(f"Место назначения обновлено на: {new_destination}", reply_markup=kb.main)
 
-
+    
+    
 @router.message(F.text == "Время прибытия", EditStates.parameter_to_edit)
 async def edit_arrival_time(message: Message, state: FSMContext):
     await state.set_state(EditStates.arrival_time)
@@ -173,19 +195,18 @@ async def edit_arrival_time(message: Message, state: FSMContext):
 
 @router.message(EditStates.arrival_time)
 async def process_new_arrival_time(message: Message, state: FSMContext):
-        await state.update_data(arrival_time=message.text)
-        user_id = message.from_user.id
-        state_data = await state.get_data()
-        user_ride = rides[user_id][state_data["ride_id"] - 1]
-        user_ride["arrival_time"] = state_data["arrival_time"]
+        new_arrival_time = message.text
+        ride_id = (await state.get_data())['ride_id']
+        
+        if not rq.validate_arrival_time(new_arrival_time):
+            await message.answer("Неверный формат времени. Используйте чч:мм.")
+            return
+        
+        async with async_session() as session:
+            await rq.update_ride(ride_id, {"arrival_time": rq.parse_time(new_arrival_time)}, session)
+            
         await state.clear()
-        await message.answer("Изменения сохранены. \n\nМесто отправления: {}\nМесто назначения: {}\nВремя прибытия: {}\nТранспортное средство: {}\nВремя до уведомления: {} минут".format(
-            user_ride['location'],
-            user_ride['destination'],
-            user_ride['arrival_time'],
-            user_ride['transport'],
-            user_ride['notify_time_delta'],
-        ), reply_markup=kb.main)
+        await message.answer("Время прибытия обновлено.", reply_markup=kb.main)
 
 
 @router.message(F.text == "Транспортное средство", EditStates.parameter_to_edit)
@@ -195,19 +216,14 @@ async def edit_transport(message: Message, state: FSMContext):
 
 @router.message(EditStates.transport)
 async def process_new_transport(message: Message, state: FSMContext):
-        await state.update_data(transport=message.text)
-        user_id = message.from_user.id
-        state_data = await state.get_data()
-        user_ride = rides[user_id][state_data["ride_id"] - 1]
-        user_ride["transport"] = state_data["transport"]
+        new_transport = message.text
+        ride_id = (await state.get_data())['ride_id']
+        
+        async with async_session() as session:
+            await rq.update_ride(ride_id, {'transport': new_transport}, session)
+            
         await state.clear()
-        await message.answer("Изменения сохранены. \n\nМесто отправления: {}\nМесто назначения: {}\nВремя прибытия: {}\nТранспортное средство: {}\nВремя до уведомления: {} минут".format(
-            user_ride['location'],
-            user_ride['destination'],
-            user_ride['arrival_time'],
-            user_ride['transport'],
-            user_ride['notify_time_delta'],
-        ), reply_markup=kb.main)
+        await message.answer("Транспортное средство обновлено.", reply_markup=kb.main)
 
 
 
@@ -218,19 +234,19 @@ async def edit_notify_time_delta(message: Message, state: FSMContext):
 
 @router.message(EditStates.notify_time_delta)
 async def process_new_notify_time_delta(message: Message, state: FSMContext):
-        await state.update_data(notify_time_delta=message.text)
-        user_id = message.from_user.id
-        state_data = await state.get_data()
-        user_ride = rides[user_id][state_data["ride_id"] - 1]
-        user_ride["notify_time_delta"] = state_data["notify_time_delta"]
+        try:
+            notify_time_delta = int(message.text)
+        except ValueError:
+            await message.answer("Введите корректное число минут.")
+            return
+        
+        ride_id = (await state.get_data())["ride_id"]
+
+        async with async_session() as session:
+            await rq.update_ride(ride_id, {"notify_time_delta": notify_time_delta}, session)
+
         await state.clear()
-        await message.answer("Изменения сохранены. \n\nМесто отправления: {}\nМесто назначения: {}\nВремя прибытия: {}\nТранспортное средство: {}\nВремя до уведомления: {} минут".format(
-            user_ride['location'],
-            user_ride['destination'],
-            user_ride['arrival_time'],
-            user_ride['transport'],
-            user_ride['notify_time_delta'],
-        ), reply_markup=kb.main)
+        await message.answer("Время до уведомления обновлено.", reply_markup=kb.main)
 
 
 
@@ -277,7 +293,13 @@ async def process_destination(message: Message, state: FSMContext):
 
 @router.message(NewRideStates.arrival_time)
 async def process_arrival_time(message: Message, state: FSMContext):
-    await state.update_data(arrival_time=message.text)
+    arrival_time_str = message.text
+
+    if not rq.validate_arrival_time(arrival_time_str):
+        await message.answer("Неверный формат времени. Используйте чч:мм (например, 14:30).")
+        return  
+    
+    await state.update_data(arrival_time=arrival_time_str)
     await state.set_state(NewRideStates.transport)
     await message.answer("Выберите транспортное средство", reply_markup=kb.transport_types)
 
@@ -294,17 +316,30 @@ async def process_notify_time_delta(message: Message, state: FSMContext):
     await state.update_data(notify_time_delta=message.text)
     state_data = await state.get_data()
     user_id = message.from_user.id
-    if user_id not in rides:
-        rides[user_id] = []
-    rides[user_id].append(state_data)
+    
+    async with async_session() as session:
+        async with session.begin(): 
+            user = await rq.get_user_by_tg_id(user_id, session=session)
+            if not user:
+                await rq.add_user(user_id, session=session)
+                user = await rq.get_user_by_tg_id(user_id, session=session)
+            
+            await rq.add_ride(user.user_id, state_data, session=session) 
+
+        
     await state.clear()
-    await message.answer("Поездка создана!\n\nМесто отправления: {}\nМесто назначения: {}\nВремя прибытия: {}\nТранспортное средство: {}\nВремя до уведомления: {} минут".format(
-        state_data['location'],
-        state_data['destination'],
-        state_data['arrival_time'],
-        state_data['transport'],
-        state_data['notify_time_delta'],
-    ), reply_markup=kb.main)
+    
+    await message.answer(
+        "Поездка создана!\n\n"
+        f"Место отправления: {state_data['location']}\n"
+        f"Место назначения: {state_data['destination']}\n"
+        f"Время прибытия: {state_data['arrival_time']}\n"
+        f"Транспортное средство: {state_data['transport']}\n"
+        f"Время до уведомления: {state_data['notify_time_delta']} минут(ы)",
+        reply_markup=kb.main
+    )
+
+
 
 
 @router.message()
