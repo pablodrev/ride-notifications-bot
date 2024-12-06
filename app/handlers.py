@@ -9,7 +9,8 @@ import json
 
 
 from datetime import datetime, timezone
-
+import app.api as api
+from config import API_KEY_GEOCODER, API_KEY_2GIS
 import app.keyboards as kb
 import app.database.requests as rq
 from app.database.requests import async_session 
@@ -21,9 +22,9 @@ router = Router()
 # Работа с временем: проверка, чтобы введенное время было больше нынешнего, с учетом часовых поясов
 # Проверка введенных данных
 # Помечать прошедшие поездки
-# Настройки
-# Отправка геолокации двумя способами: по кнопке или введя адрес вручную
 # Красивые иконки
+#
+# Добавление пользователя в БД при команде /start, а не при созданиии поездки
 # 
 
 
@@ -31,11 +32,14 @@ class NewRideStates(StatesGroup):
     location = State()
     destination = State()
     destination_input = State()
+    destination_coords = State()
     arrival_time = State()
     transport = State()
     notify_time_delta = State()
+    ride_time = State()
 
 choose_mode = State()
+choose_notification_buffer = State()
 
 class EditStates(StatesGroup):
     ride_id = State()
@@ -53,13 +57,10 @@ user_coordinates = {}
 
 @router.message(CommandStart())
 @router.message(choose_mode, F.text == "Назад")
+@router.message(choose_notification_buffer, F.text == "Назад")
 async def cmd_start(message: Message, state:FSMContext):
+    await state.clear()
     await message.answer("Привет, это бот для напоминания о поездках! Выбери пункт в меню.", reply_markup=kb.main)
-
-
-@router.message(Command("help"))
-async def cmd_help(message: Message):
-    await message.answer("Help message")   
 
 
 @router.message(F.text == "Новая поездка")
@@ -282,13 +283,12 @@ async def process_destination(message: Message, state: FSMContext):
     state_data = await state.get_data()
     destination_input = state_data["destination_input"]
     if destination_input == "location":
-          await state.update_data(destination=(message.location.latitude, message.location.longitude))
+         await state.update_data(destination=(message.location.latitude, message.location.longitude))
     elif destination_input == "text":
-         # TODO: Перевести адрес в координаты
-         await state.update_data(destination=message.text)
+         longitude, latitude = api.get_coordinates(API_KEY_GEOCODER, message.text)
+         await state.update_data(destination=(latitude, longitude))
     await state.set_state(NewRideStates.arrival_time)
     await message.answer("Введите время прибытия")
-     
 
 
 @router.message(NewRideStates.arrival_time)
@@ -306,7 +306,16 @@ async def process_arrival_time(message: Message, state: FSMContext):
 
 @router.message(NewRideStates.transport)
 async def process_transport(message: Message, state: FSMContext):
-    await state.update_data(transport=message.text)
+    if message.text == "Общественный транспорт":
+        transport_type = "public_transport"
+    elif message.text == "Автомобиль":
+        transport_type = "car"
+    elif message.text == "Пешком":
+        transport_type = "walk"
+    else:
+        await message.answer("Неизвестный тип транспорта", reply_markup=kb.transport_types)
+        return
+    await state.update_data(transport=transport_type)
     await state.set_state(NewRideStates.notify_time_delta)
     await message.answer("Введите за какое время (в минутах) до выхода Вас уведомить?", reply_markup=ReplyKeyboardRemove())
 
@@ -315,6 +324,9 @@ async def process_transport(message: Message, state: FSMContext):
 async def process_notify_time_delta(message: Message, state: FSMContext):
     await state.update_data(notify_time_delta=message.text)
     state_data = await state.get_data()
+    logging.info((API_KEY_2GIS, state_data["location"], state_data["destination"], state_data["transport"]))
+    ride_time = api.calc_time(API_KEY_2GIS, state_data["location"], state_data["destination"], state_data["transport"])
+    logging.info(ride_time)
     user_id = message.from_user.id
     
     async with async_session() as session:
@@ -335,9 +347,35 @@ async def process_notify_time_delta(message: Message, state: FSMContext):
         f"Место назначения: {state_data['destination']}\n"
         f"Время прибытия: {state_data['arrival_time']}\n"
         f"Транспортное средство: {state_data['transport']}\n"
-        f"Время до уведомления: {state_data['notify_time_delta']} минут(ы)",
+        f"Время до уведомления: {state_data['notify_time_delta']} минут(ы)"
+        f"Поездка займет: {ride_time}",
         reply_markup=kb.main
     )
+
+
+@router.message(F.text == "Настройки")
+async def cmd_settings(message: Message, state: FSMContext):
+    user_id = message.from_user.id
+
+    async with async_session() as session:
+        user_settings = await rq.get_user_settings(user_id, session)
+    await state.set_state(choose_notification_buffer)
+    await message.answer(f"Запас времени для каждой поездки: {user_settings}%.\nЧтобы изменить, введите новое значение в %")
+
+
+@router.message(choose_notification_buffer)
+async def cmd_change_settings(message: Message, state: FSMContext):
+    user_id = message.from_user.id
+    try:
+        new_notification_buffer = int(message.text)
+    except ValueError:
+        await message.answer("Введите целое число.")
+        return
+    async with async_session() as session:
+        await rq.set_user_settings(user_id, new_notification_buffer, session)
+
+    await state.clear()
+    await message.answer("Новый запас времени установлен!", reply_markup=kb.main)
 
 
 

@@ -25,3 +25,8 @@ ride_params = ReplyKeyboardMarkup(keyboard=[
     [KeyboardButton(text="Транспортное средство")],
     [KeyboardButton(text="Время до уведомления")],
 ])
+
+settings = ReplyKeyboardMarkup(keyboard=[
+    [KeyboardButton(text="Изменить запас времени")],
+    [KeyboardButton(text="Назад")]
+])

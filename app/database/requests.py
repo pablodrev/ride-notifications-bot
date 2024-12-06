@@ -9,7 +9,20 @@ from sqlalchemy.exc import IntegrityError
 from datetime import datetime, time
 
 
+async def get_user_settings(tg_id: int, session: AsyncSession):
+    result = await session.execute(select(User).where(User.tg_id == tg_id))
+    user = result.scalar_one_or_none()
+    if user:
+        return user.notification_bufer
+    return -1
 
+
+async def set_user_settings(tg_id: int, new_notification_buffer: int,  session: AsyncSession):
+    result = await session.execute(select(User).where(User.tg_id == tg_id))
+    user = result.scalar()
+    print(user)
+    user.notification_bufer = new_notification_buffer
+    await session.commit()
 
 async def get_user_by_tg_id(user_id: int, session: AsyncSession):
     result = await session.execute(select(User).where(User.tg_id == user_id))
