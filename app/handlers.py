@@ -10,7 +10,7 @@ import json
 
 from datetime import datetime, timezone
 import app.api as api
-from config import API_KEY_GEOCODER, API_KEY_2GIS
+from confi import API_KEY_GEOCODER, API_KEY_2GIS
 import app.keyboards as kb
 import app.database.requests as rq
 from app.database.requests import async_session 
@@ -24,7 +24,6 @@ router = Router()
 # Помечать прошедшие поездки
 # Красивые иконки
 #
-# Добавление пользователя в БД при команде /start, а не при созданиии поездки
 # 
 
 
@@ -59,6 +58,13 @@ user_coordinates = {}
 @router.message(choose_mode, F.text == "Назад")
 @router.message(choose_notification_buffer, F.text == "Назад")
 async def cmd_start(message: Message, state:FSMContext):
+    user_id = message.from_user.id
+    
+    async with async_session() as session:
+        async with session.begin():
+            user = await rq.get_user_by_tg_id(user_id, session=session)
+        if not user:
+            await  rq.add_user(user_id, session=session)
     await state.clear()
     await message.answer("Привет, это бот для напоминания о поездках! Выбери пункт в меню.", reply_markup=kb.main)
 
@@ -85,17 +91,17 @@ async def cmd_my_rides(message: Message, state: FSMContext):
 
     answer = 'Ваши сохраненные поездки:\n'
     for count, ride in enumerate(user_rides, start=1):
-        # Преобразуем JSON в обычный формат
-        location = json.loads(ride.location)
-        destination = json.loads(ride.destination)
         
         answer += (
-            f"\n{count}. Место отправления: {location}\n"
-            f"Место назначения: {destination}\n"
-            f"Время прибытия: {ride.arrival_time}\n"
-            f"Транспортное средство: {ride.transport}\n"
-            f"Время до уведомления: {ride.notify_time_delta} минут(ы)\n"
-        )
+    f"\n{count}. Место отправления: {ride.location_text}\n"
+    f"Место назначения: {ride.destination_text}\n"
+    f"Время прибытия: {ride.arrival_time}\n"
+    f"Транспортное средство: {ride.transport}\n"
+    f"Время до уведомления: {ride.notify_time_delta} минут(ы)\n"
+    f"Маршрут: {ride.path}\n"
+    f"Поездка займет: {ride.ride_time} минут(ы)\n"
+)
+
 
     await message.answer(answer, reply_markup=kb.edit_delete_back)
 
@@ -256,7 +262,12 @@ async def process_new_notify_time_delta(message: Message, state: FSMContext):
 
 @router.message(NewRideStates.location)
 async def process_location(message: Message, state: FSMContext):
-    await state.update_data(location=(message.location.latitude, message.location.longitude))
+    latitude = message.location.latitude
+    longitude = message.location.longitude
+    
+    location_text = api.get_address_from_coordinates(API_KEY_GEOCODER, latitude, longitude)
+    await state.update_data(location=(latitude, longitude), location_text=location_text)
+
     await state.set_state(NewRideStates.destination_input)
     await message.answer("Введите место назначения одим из двух способов:", reply_markup=kb.destination)
 
@@ -283,10 +294,16 @@ async def process_destination(message: Message, state: FSMContext):
     state_data = await state.get_data()
     destination_input = state_data["destination_input"]
     if destination_input == "location":
-         await state.update_data(destination=(message.location.latitude, message.location.longitude))
+        latitude = message.location.latitude
+        longitude = message.location.longitude
+        destination_text = api.get_address_from_coordinates(API_KEY_GEOCODER, latitude, longitude)
+        await state.update_data(destination=(latitude, longitude), destination_text=destination_text)
     elif destination_input == "text":
-         longitude, latitude = api.get_coordinates(API_KEY_GEOCODER, message.text)
-         await state.update_data(destination=(latitude, longitude))
+        # Получаем координаты для введенного текста
+        longitude, latitude = api.get_coordinates(API_KEY_GEOCODER, message.text)
+        destination_text = message.text 
+        await state.update_data(destination=(latitude, longitude), destination_text=destination_text)
+    
     await state.set_state(NewRideStates.arrival_time)
     await message.answer("Введите время прибытия")
 
@@ -325,32 +342,35 @@ async def process_notify_time_delta(message: Message, state: FSMContext):
     await state.update_data(notify_time_delta=message.text)
     state_data = await state.get_data()
     logging.info((API_KEY_2GIS, state_data["location"], state_data["destination"], state_data["transport"]))
-    ride_time = api.calc_time(API_KEY_2GIS, state_data["location"], state_data["destination"], state_data["transport"])
-    logging.info(ride_time)
+    route_info = api.calc_time(API_KEY_2GIS, state_data["location"], state_data["destination"], state_data["transport"])
+    logging.info(route_info)
+    
+    
+    await state.update_data(
+        ride_time=route_info.get("total_duration"),
+        path=route_info.get("path")
+    )    
+    state_data = await state.get_data() 
     user_id = message.from_user.id
     
     async with async_session() as session:
-        async with session.begin(): 
-            user = await rq.get_user_by_tg_id(user_id, session=session)
-            if not user:
-                await rq.add_user(user_id, session=session)
-                user = await rq.get_user_by_tg_id(user_id, session=session)
-            
-            await rq.add_ride(user.user_id, state_data, session=session) 
+        async with session.begin():
+            await rq.add_ride(user_id, state_data, session=session, api_key_2gis=API_KEY_2GIS)
 
-        
     await state.clear()
     
     await message.answer(
         "Поездка создана!\n\n"
-        f"Место отправления: {state_data['location']}\n"
-        f"Место назначения: {state_data['destination']}\n"
+        f"Место отправления: {state_data['location_text']}\n"
+        f"Место назначения: {state_data['destination_text']}\n"
         f"Время прибытия: {state_data['arrival_time']}\n"
         f"Транспортное средство: {state_data['transport']}\n"
-        f"Время до уведомления: {state_data['notify_time_delta']} минут(ы)"
-        f"Поездка займет: {ride_time}",
+        f"Время до уведомления: {state_data['notify_time_delta']} минут(ы)\n"
+        f"Маршрут: {state_data.get('path', 'Неизвестно')}\n"
+        f"Поездка займет: {state_data['ride_time']} минут.",
         reply_markup=kb.main
     )
+
 
 
 @router.message(F.text == "Настройки")

@@ -8,8 +8,6 @@ from datetime import datetime, timezone, time
 
 
 #
-# Добавить в поездку поле с временем проездки
-# Добавить в поездку поля с тексовым адресом для точки отправления и точки назначения
 #
 
 engine = create_async_engine(url='sqlite+aiosqlite:///db.sqlite3')
@@ -28,8 +26,7 @@ class User(Base):
     notification_bufer: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
     
     # Связь с таблицей Rides
-    rides = relationship("Ride", back_populates="user", cascade="all, delete-orphan")
-    
+    rides = relationship("Ride", back_populates="user", lazy="selectin", cascade="all, delete-orphan")
 class Ride(Base):
     __tablename__  = 'rides'
     
@@ -39,6 +36,11 @@ class Ride(Base):
     arrival_time: Mapped[time] = mapped_column(Time, nullable=False)
     transport: Mapped[str] = mapped_column(String(20), nullable=False)
     notify_time_delta: Mapped[int] = mapped_column(Integer, nullable=False)
+    #Добавленные столбцы
+    location_text: Mapped[str] = mapped_column(String, nullable=True) #Всегда ли будет заполняться?
+    destination_text: Mapped[str] = mapped_column(String, nullable= True)
+    path: Mapped[str] = mapped_column(String, nullable=True)
+    ride_time: Mapped[int] = mapped_column(Integer, nullable=True)
     
     datetime_now_utc = datetime.now(timezone.utc)
 
@@ -47,11 +49,10 @@ class Ride(Base):
     
     
      # Внешний ключ к таблице User
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.user_id"), nullable=False)
+    tg_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.tg_id"), nullable=False)
     
     # Связь с таблицей User
     user = relationship("User", back_populates="rides")
-    
 
 async def async_main():
     async with engine.begin() as conn:

@@ -8,6 +8,10 @@ import re
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, time
 
+import app.api as ap
+
+import aiohttp
+import json
 
 async def get_user_settings(tg_id: int, session: AsyncSession):
     result = await session.execute(select(User).where(User.tg_id == tg_id))
@@ -35,37 +39,44 @@ async def add_user(user_id: int, session: AsyncSession):
     await session.commit()
 
 
-async def add_ride(user_id: int, state_data: dict, session: AsyncSession):
-    
+async def add_ride(tg_id, state_data, session, api_key_2gis):
     location_json = json.dumps(state_data['location'])
     destination_json = json.dumps(state_data['destination'])
     
+    transport_type = state_data["transport"]  
     arrival_time_str = state_data['arrival_time']
     
-    if not validate_arrival_time(arrival_time_str):
-        raise ValueError("Неверный формат времени. Используйте чч:мм (например, 14:30).")
-    
     arrival_time_obj = parse_time(arrival_time_str)
-
+    
+    route_info = ap.calc_time(api_key_2gis, state_data['location'], state_data['destination'], transport_type)
 
     ride = Ride(
-        user_id=user_id,
         location=location_json,
         destination=destination_json,
+        transport=transport_type,
         arrival_time=arrival_time_obj,
-        transport=state_data['transport'],
-        notify_time_delta=state_data['notify_time_delta']
+        notify_time_delta=state_data["notify_time_delta"],
+        location_text=state_data.get('location_text', 'Неизвестное место отправления'),
+        destination_text=state_data.get('destination_text', 'Неизвестное место назначения'),
+        tg_id=tg_id,
+        path=route_info.get('path'),
+        ride_time=route_info.get('total_duration'),
     )
+
     session.add(ride)
     await session.commit()
 
 
-async def get_user_rides(tg_id: int, session: AsyncSession):
+
+async def get_user_rides(tg_id: int, session: AsyncSession):    
     result = await session.execute(select(User).where(User.tg_id == tg_id).options(selectinload(User.rides)))
+    
     user = result.scalar_one_or_none()
     if user:
-        return user.rides 
+        for ride in user.rides:
+            return user.rides    
     return []
+
 
 
 async def update_ride(rise_id:int, data:dict, session: AsyncSession ):

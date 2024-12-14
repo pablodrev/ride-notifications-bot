@@ -56,9 +56,11 @@ def calc_time(api_key_2gis, origin_coords, destination_coords, transport_type):
             else:
                 movements.append(f"{mode} ({distance} м, {duration // 60} мин)")
 
-        response_message = f"Самый короткий маршрут займет {total_duration // 60} минут:\n"
-        response_message += " -> ".join(movements)
-        return response_message
+        #response_message = f"Самый короткий маршрут займет {total_duration // 60} минут:\n"
+        #response_message += " -> ".join(movements)
+        # return response_message
+        return {"path": " -> ".join(movements),
+            "total_duration": total_duration,}
 
     elif transport_type == 'car':
         url = f"https://routing.api.2gis.com/carrouting/6.0.0/global?key={api_key_2gis}"
@@ -91,7 +93,12 @@ def calc_time(api_key_2gis, origin_coords, destination_coords, transport_type):
         total_duration_car = car_route['total_duration'] // 60
         total_distance_car = car_route['total_distance']
 
-        return f"На автомобиле: {total_duration_car} минут, {total_distance_car} метров.\n"
+        # return f"На автомобиле: {total_duration_car} минут, {total_distance_car} метров.\n"
+        return {
+            "total_duration": total_duration_car,
+            "total_distance": total_distance_car,
+            "path": f"Автомобильный маршрут {total_distance_car}"
+        }
 
     elif transport_type == 'walk':
         url = f"https://routing.api.2gis.com/carrouting/6.0.0/global?key={api_key_2gis}"
@@ -123,4 +130,24 @@ def calc_time(api_key_2gis, origin_coords, destination_coords, transport_type):
         total_duration_walk = walk_route['total_duration'] // 60
         total_distance_walk = walk_route['total_distance']
 
-        return f"Пешком: {total_duration_walk} минут, {total_distance_walk} метров.\n"
+        #return f"Пешком: {total_duration_walk} минут, {total_distance_walk} метров.\n"
+        return {
+            "total_duration": total_duration_walk,
+            "total_distance": total_distance_walk,
+            "path": f"Пешеходный маршрут {total_distance_walk}"
+        }
+
+
+def get_address_from_coordinates(api_key, latitude, longitude):
+    url = "https://geocode-maps.yandex.ru/1.x/"
+    params = {"apikey": api_key, "geocode": f"{longitude},{latitude}", "format": "json"}
+    response = requests.get(url, params=params)
+    data = response.json()
+    
+    # Получаем адрес из данных ответа
+    try:
+        address = data['response']['GeoObjectCollection']['featureMember'][0]['GeoObject']['metaDataProperty']['GeocoderMetaData']['text']
+    except (KeyError, IndexError):
+        address = "Неизвестно"
+    
+    return address

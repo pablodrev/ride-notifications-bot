@@ -4,7 +4,7 @@ import logging
 from aiogram import Bot, Dispatcher
 from app.handlers import router
 from app.database.models import async_main
-from config import TG_TOKEN
+from confi import TG_TOKEN
 
 bot = Bot(token=TG_TOKEN)
 dp = Dispatcher()
