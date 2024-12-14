@@ -60,7 +60,7 @@ def calc_time(api_key_2gis, origin_coords, destination_coords, transport_type):
         #response_message += " -> ".join(movements)
         # return response_message
         return {"path": " -> ".join(movements),
-            "total_duration": total_duration,}
+            "total_duration": total_duration // 60,}
 
     elif transport_type == 'car':
         url = f"https://routing.api.2gis.com/carrouting/6.0.0/global?key={api_key_2gis}"
