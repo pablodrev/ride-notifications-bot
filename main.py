@@ -6,7 +6,6 @@ from app.handlers import router
 from app.database.models import async_main
 from config import TG_TOKEN
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from datetime import datetime, timedelta
 
 bot = Bot(token=TG_TOKEN)
 dp = Dispatcher()

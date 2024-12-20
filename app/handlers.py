@@ -39,6 +39,7 @@ class NewRideStates(StatesGroup):
     destination_coords = State()
     arrival_time = State()
     transport = State()
+    transport_api_format = State()
     notify_time_delta = State()
     ride_time = State()
 
@@ -52,6 +53,7 @@ class EditStates(StatesGroup):
     destination = State()
     arrival_time = State()
     transport = State()
+    transport_api_format = State()
     notify_time_delta = State()
 
 
@@ -72,13 +74,7 @@ async def cmd_start(message: Message, state:FSMContext):
         if not user:
             await  rq.add_user(user_id, session=session)
     await state.clear()
-    await message.answer("Привет, это бот для напоминания о поездках! Выбери пункт в меню.", reply_markup=kb.main)
-
-
-@router.message(F.text == "Новая поездка")
-async def cmd_new_ride(message: Message, state: FSMContext):
-    await state.set_state(NewRideStates.location)
-    await message.answer("Для создания поездки необходимо знать точку отправления.", reply_markup=kb.location)
+    await message.answer("👋 Привет! это бот для напоминания о поездках 🗺️\n\nВыбери пункт в меню", reply_markup=kb.main)
 
 
 @router.message(F.text == "Мои поездки")
@@ -99,16 +95,14 @@ async def cmd_my_rides(message: Message, state: FSMContext):
     for count, ride in enumerate(user_rides, start=1):
         
         answer += (
-    f"\n{count}. Место отправления: {ride.location_text}\n"
-    f"Место назначения: {ride.destination_text}\n"
-    f"Время прибытия: {ride.arrival_time}\n"
-    f"Транспортное средство: {ride.transport}\n"
-    f"Время до уведомления: {ride.notify_time_delta} минут(ы)\n"
-    f"Маршрут: {ride.path}\n"
-    f"Поездка займет: {ride.ride_time} минут(ы)\n"
+    f"\n{count}.\n⏫ Место отправления: {ride.location_text}\n"
+    f"⏬ Место назначения: {ride.destination_text}\n"
+    f"🕑 Время прибытия: {ride.arrival_time}\n"
+    f"🛞 Транспортное средство: {ride.transport}\n"
+    f"🔔 Время до уведомления: {ride.notify_time_delta} минут(ы)\n"
+    f"🗺️ Маршрут: {ride.path}\n"
+    f"⌛ Дорога займет: {ride.ride_time} минут(ы)\n"
 )
-
-
     await message.answer(answer, reply_markup=kb.edit_delete_back)
 
 
@@ -118,13 +112,13 @@ async def cmd_my_rides(message: Message, state: FSMContext):
 async def edit_ride(message: Message, state: FSMContext):
      await state.update_data(choose_mode="edit")
      await state.set_state(EditStates.ride_id)
-     await message.answer("Введите номер поездки", reply_markup=ReplyKeyboardRemove())
+     await message.answer("Введите номер поездки для редактирования✏️", reply_markup=ReplyKeyboardRemove())
 
 @router.message(choose_mode, F.text == "Удалить")
 async def delete_ride(message: Message, state: FSMContext):
      await state.update_data(choose_mode="delete")
      await state.set_state(EditStates.ride_id)
-     await message.answer("Введите номер поездки", reply_markup=ReplyKeyboardRemove())
+     await message.answer("Введите номер поездки для удаления🚫", reply_markup=ReplyKeyboardRemove())
 
 
 # Редактирование поездки
@@ -263,8 +257,17 @@ async def process_new_notify_time_delta(message: Message, state: FSMContext):
 
 
 
-
+#
 # Создание новой поездки
+#
+
+
+
+@router.message(F.text == "Новая поездка")
+async def cmd_new_ride(message: Message, state: FSMContext):
+    await state.set_state(NewRideStates.location)
+    await message.answer("Для создания поездки необходимо знать точку отправления ⏫", reply_markup=kb.location)
+
 
 @router.message(NewRideStates.location)
 async def process_location(message: Message, state: FSMContext):
@@ -275,7 +278,7 @@ async def process_location(message: Message, state: FSMContext):
     await state.update_data(location=(latitude, longitude), location_text=location_text)
 
     await state.set_state(NewRideStates.destination_input)
-    await message.answer("Введите место назначения одим из двух способов:", reply_markup=kb.destination)
+    await message.answer("Введите место назначения⏬ одим из двух способов:", reply_markup=kb.destination)
 
 
 @router.message(NewRideStates.destination_input, F.text == "Точка на карте")
@@ -283,7 +286,7 @@ async def process_destination_input(message: Message, state: FSMContext):
     await state.update_data(destination_input="location")
 
     await state.set_state(NewRideStates.destination)
-    await message.answer('Чтобы отправить место назначение как точку на карте, выберите пункт "Геолокация" во вложениях',
+    await message.answer('Чтобы отправить место назначение как точку на карте 📌, выберите пункт "Геолокация" во вложениях 📎',
                          reply_markup=ReplyKeyboardRemove())
 
 
@@ -292,7 +295,7 @@ async def process_destination_input(message: Message, state: FSMContext):
     await state.update_data(destination_input="text")
 
     await state.set_state(NewRideStates.destination)
-    await message.answer("Введите место назначения",
+    await message.answer("Введите место назначения ⏬",
                          reply_markup=ReplyKeyboardRemove())
 
 @router.message(NewRideStates.destination)
@@ -311,7 +314,7 @@ async def process_destination(message: Message, state: FSMContext):
         await state.update_data(destination=(latitude, longitude), destination_text=destination_text)
     
     await state.set_state(NewRideStates.arrival_time)
-    await message.answer("Введите время прибытия")
+    await message.answer("Введите время прибытия 🕑")
 
 
 @router.message(NewRideStates.arrival_time)
@@ -319,12 +322,12 @@ async def process_arrival_time(message: Message, state: FSMContext):
     arrival_time_str = message.text
 
     if not rq.validate_arrival_time(arrival_time_str):
-        await message.answer("Неверный формат времени. Используйте чч:мм (например, 14:30).")
+        await message.answer("Неверный формат времени. Используйте чч:мм (например, 14:30)")
         return  
     
     await state.update_data(arrival_time=arrival_time_str)
     await state.set_state(NewRideStates.transport)
-    await message.answer("Выберите транспортное средство", reply_markup=kb.transport_types)
+    await message.answer("Выберите транспортное средство 🛞", reply_markup=kb.transport_types)
 
 
 @router.message(NewRideStates.transport)
@@ -338,7 +341,7 @@ async def process_transport(message: Message, state: FSMContext):
     else:
         await message.answer("Неизвестный тип транспорта", reply_markup=kb.transport_types)
         return
-    await state.update_data(transport=transport_type)
+    await state.update_data(transport=message.text, transport_api_format=transport_type)
     await state.set_state(NewRideStates.notify_time_delta)
     await message.answer("Введите за какое время (в минутах) до выхода Вас уведомить?", reply_markup=ReplyKeyboardRemove())
 
@@ -347,9 +350,8 @@ async def process_transport(message: Message, state: FSMContext):
 async def process_notify_time_delta(message: Message, state: FSMContext, scheduler: AsyncIOScheduler, bot: Bot):
     await state.update_data(notify_time_delta=message.text)
     state_data = await state.get_data()
-    route_info = api.calc_time(API_KEY_2GIS, state_data["location"], state_data["destination"], state_data["transport"])
+    route_info = api.calc_time(API_KEY_2GIS, state_data["location"], state_data["destination"], state_data["transport_api_format"])
     logging.info(route_info)
-    
     
     await state.update_data(
         ride_time=route_info.get("total_duration"),
@@ -365,7 +367,6 @@ async def process_notify_time_delta(message: Message, state: FSMContext, schedul
     await state.clear()
 
     # Планируем уведомление
-    chat_id = message.chat.id
     notify_time = calc_notification_time(parse_time(state_data["arrival_time"]), int(state_data["ride_time"]), int(state_data["notify_time_delta"]), 10)
     
     # Добавляем задачу в планировщик
@@ -373,19 +374,19 @@ async def process_notify_time_delta(message: Message, state: FSMContext, schedul
             send_scheduled_message,
             "date",  # Тип задачи — одноразовая задача
             run_date=notify_time,
-            args=(bot, message.chat.id, f"Напоминание о поездке {state_data['destination_text']}"),
+            args=(bot, message.chat.id, f"🔔 Напоминание о поездке {state_data['destination_text']}"),
     )
 
     await message.answer(
         "Поездка создана!\n\n"
-        f"Напоминание будет отправлено {notify_time}\n\n"
-        f"Место отправления: {state_data['location_text']}\n"
-        f"Место назначения: {state_data['destination_text']}\n"
-        f"Время прибытия: {state_data['arrival_time']}\n"
-        f"Транспортное средство: {state_data['transport']}\n"
-        f"Время до уведомления: {state_data['notify_time_delta']} минут(ы)\n"
-        f"Маршрут: {state_data.get('path', 'Неизвестно')}\n"
-        f"Маршрут займет: {state_data['ride_time']} минут.",
+        f"🔔 Напоминание будет отправлено {notify_time}\n\n"
+        f"⏫ Место отправления: {state_data['location_text']}\n"
+        f"⏬ Место назначения: {state_data['destination_text']}\n"
+        f"🕑 Время прибытия: {state_data['arrival_time']}\n"
+        f"🛞 Транспортное средство: {state_data['transport']}\n"
+        f"🔔 Время до уведомления: {state_data['notify_time_delta']} минут(ы)\n"
+        f"🗺️ Маршрут: {state_data.get('path', 'Неизвестно')}\n"
+        f"⌛ Дорога займет: {state_data['ride_time']} минут.",
         reply_markup=kb.main
     )
 
@@ -418,7 +419,7 @@ async def cmd_change_settings(message: Message, state: FSMContext):
 
 @router.message()
 async def unknown_command(message: Message):
-    await message.answer("Извините, но я не знаю такую команду. Вы можете посмотреть список доступных команд в меню.", reply_markup=kb.main)
+    await message.answer("Извините, но я не знаю такую команду🤔. Вы можете посмотреть список доступных команд в меню.", reply_markup=kb.main)
 
 
 

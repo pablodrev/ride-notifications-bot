@@ -49,7 +49,7 @@ async def add_ride(tg_id, state_data, session, api_key_2gis):
     
     arrival_time_obj = parse_time(arrival_time_str)
     
-    route_info = ap.calc_time(api_key_2gis, state_data['location'], state_data['destination'], transport_type)
+    route_info = ap.calc_time(api_key_2gis, state_data['location'], state_data['destination'], state_data["transport_api_format"])
 
     ride = Ride(
         location=location_json,
