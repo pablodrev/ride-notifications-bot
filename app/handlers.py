@@ -1,22 +1,28 @@
 import logging
-from aiogram import F, Router
+from aiogram import F, Router, Bot
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
-from aiogram.types import ReplyKeyboardRemove, ContentType
+from aiogram.types import ReplyKeyboardRemove
 import json
 
-
-from datetime import datetime, timezone
+from datetime import datetime, timedelta
 import app.api as api
-from confi import API_KEY_GEOCODER, API_KEY_2GIS
+from config import API_KEY_GEOCODER, API_KEY_2GIS
 import app.keyboards as kb
 import app.database.requests as rq
-from app.database.requests import async_session 
+from app.database.requests import async_session, parse_time, calc_notification_time
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.date import DateTrigger
 
 
 router = Router()
+
+async def send_scheduled_message(bot, chat_id, text):
+    """Функция для отправки сообщения (вызовется планировщиком)."""
+    await bot.send_message(chat_id, text)
 
 # TODO:
 # Работа с временем: проверка, чтобы введенное время было больше нынешнего, с учетом часовых поясов
@@ -25,7 +31,6 @@ router = Router()
 # Красивые иконки
 #
 # 
-
 
 class NewRideStates(StatesGroup):
     location = State()
@@ -54,12 +59,13 @@ rides = {}
 user_coordinates = {}
 
 
+
 @router.message(CommandStart())
 @router.message(choose_mode, F.text == "Назад")
 @router.message(choose_notification_buffer, F.text == "Назад")
 async def cmd_start(message: Message, state:FSMContext):
     user_id = message.from_user.id
-    
+    logging.info("CHAT ID: " + str(message.chat.id))
     async with async_session() as session:
         async with session.begin():
             user = await rq.get_user_by_tg_id(user_id, session=session)
@@ -338,10 +344,9 @@ async def process_transport(message: Message, state: FSMContext):
 
 
 @router.message(NewRideStates.notify_time_delta)
-async def process_notify_time_delta(message: Message, state: FSMContext):
+async def process_notify_time_delta(message: Message, state: FSMContext, scheduler: AsyncIOScheduler, bot: Bot):
     await state.update_data(notify_time_delta=message.text)
     state_data = await state.get_data()
-    logging.info((API_KEY_2GIS, state_data["location"], state_data["destination"], state_data["transport"]))
     route_info = api.calc_time(API_KEY_2GIS, state_data["location"], state_data["destination"], state_data["transport"])
     logging.info(route_info)
     
@@ -358,16 +363,29 @@ async def process_notify_time_delta(message: Message, state: FSMContext):
             await rq.add_ride(user_id, state_data, session=session, api_key_2gis=API_KEY_2GIS)
 
     await state.clear()
+
+    # Планируем уведомление
+    chat_id = message.chat.id
+    notify_time = calc_notification_time(parse_time(state_data["arrival_time"]), int(state_data["ride_time"]), int(state_data["notify_time_delta"]), 10)
     
+    # Добавляем задачу в планировщик
+    scheduler.add_job(
+            send_scheduled_message,
+            "date",  # Тип задачи — одноразовая задача
+            run_date=notify_time,
+            args=(bot, message.chat.id, f"Напоминание о поездке {state_data['destination_text']}"),
+    )
+
     await message.answer(
         "Поездка создана!\n\n"
+        f"Напоминание будет отправлено {notify_time}\n\n"
         f"Место отправления: {state_data['location_text']}\n"
         f"Место назначения: {state_data['destination_text']}\n"
         f"Время прибытия: {state_data['arrival_time']}\n"
         f"Транспортное средство: {state_data['transport']}\n"
         f"Время до уведомления: {state_data['notify_time_delta']} минут(ы)\n"
         f"Маршрут: {state_data.get('path', 'Неизвестно')}\n"
-        f"Поездка займет: {state_data['ride_time']} минут.",
+        f"Маршрут займет: {state_data['ride_time']} минут.",
         reply_markup=kb.main
     )
 
@@ -398,12 +416,9 @@ async def cmd_change_settings(message: Message, state: FSMContext):
     await message.answer("Новый запас времени установлен!", reply_markup=kb.main)
 
 
-
-
 @router.message()
 async def unknown_command(message: Message):
     await message.answer("Извините, но я не знаю такую команду. Вы можете посмотреть список доступных команд в меню.", reply_markup=kb.main)
-
 
 
 

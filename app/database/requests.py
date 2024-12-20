@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 import re
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, time
+from math import ceil
 
 import app.api as ap
 
@@ -66,7 +67,9 @@ async def add_ride(tg_id, state_data, session, api_key_2gis):
     session.add(ride)
     await session.commit()
 
-
+async def calc_notification_time(arrival_time, ride_time, notify_time_delta, notification_buffer):
+    total_ride_length = (ride_time + notify_time_delta) * (1 + 1 / notification_buffer)
+    return arrival_time - total_ride_length
 
 async def get_user_rides(tg_id: int, session: AsyncSession):    
     result = await session.execute(select(User).where(User.tg_id == tg_id).options(selectinload(User.rides)))
@@ -109,3 +112,12 @@ def validate_arrival_time(time_str: str) -> bool:
 # Преобразование строки в объект времени
 def parse_time(time_str: str) -> time:
     return datetime.strptime(time_str, "%H:%M").time()
+
+def calc_notification_time(arrival_time, ride_time, notify_time_delta, notification_buffer):
+    arrival_time_minutes = arrival_time.hour * 60 + arrival_time.minute
+    total_ride_length = ceil((ride_time + notify_time_delta) * (1 + 1 / notification_buffer))
+    time_to_notify_minutes = arrival_time_minutes - total_ride_length
+    notification_time = time(time_to_notify_minutes // 60, time_to_notify_minutes % 60)
+
+    return datetime.combine(datetime.now().date(), notification_time)
+
