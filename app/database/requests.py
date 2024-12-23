@@ -82,18 +82,52 @@ async def get_user_rides(tg_id: int, session: AsyncSession):
 
 
 
-async def update_ride(rise_id:int, data:dict, session: AsyncSession ):
+async def update_ride(ride_id: int, data: dict, session: AsyncSession, api_key_2gis, api_key_geocoder):
     # Фильтруем переданные данные, чтобы исключить None значения
-    updare_data = {k: v for k, v in data.items() if v is not None}
+    update_data = {k: v for k, v in data.items() if v is not None}
     
-    if 'location' in updare_data and isinstance(updare_data['location'], tuple):
-        updare_data['location'] = json.dumps(updare_data['location'])
-        
-    if 'destination' in updare_data and isinstance(updare_data['destination'], tuple):
-        updare_data['destination'] = json.dumps(updare_data['destination'])
-        
+    # Проверка, нужно ли пересчитывать маршрут или адреса
+    if 'location' in update_data or 'destination' in update_data or 'transport' in update_data:
+        async with session.begin():
+            ride = await session.get(Ride, ride_id)
+            if ride:
+                new_location = update_data.get('location', ride.location)
+                new_destination = update_data.get('destination', ride.destination)
+                
+                if isinstance(new_location, str):
+                    new_location = json.loads(new_location)
+                if isinstance(new_destination, str):
+                    new_destination = json.loads(new_destination)
+
+                if not isinstance(new_location, (list, tuple)) or len(new_location) != 2:
+                    raise ValueError(f"Invalid location format: {new_location}")
+                if not isinstance(new_destination, (tuple, list)) or len(new_destination) != 2:
+                    raise ValueError(f"Invalid destination format: {new_destination}")
+                
+                new_location_text = ap.get_address_from_coordinates(api_key_geocoder, new_location[0], new_location[1])
+                new_destination_text = ap.get_address_from_coordinates(api_key_geocoder, new_destination[0], new_destination[1])
+                
+                update_data['location_text'] = new_location_text
+                update_data['destination_text'] = new_destination_text
+                
+                state_data = {
+                    'location': (new_location[0], new_location[1]),
+                    'destination': (new_destination[0], new_destination[1]),
+                    'transport': update_data.get('transport', ride.transport)
+                }
+                if state_data['transport'] == "Общественный транспорт":
+                    transport_type = "public_transport"
+                elif state_data['transport'] == "Автомобиль":
+                    transport_type = "car"
+                elif state_data['transport'] == "Пешком":
+                    transport_type = "walk"
+                route_info = ap.calc_time(api_key_2gis, state_data['location'], state_data['destination'], transport_type)
+                
+                update_data['ride_time'] = route_info.get("total_duration")
+                update_data['path'] = route_info.get("path")
+    
     await session.execute(
-        update(Ride).where(Ride.ride_id == rise_id).values(**updare_data)
+        update(Ride).where(Ride.ride_id == ride_id).values(**update_data)
     )
     await session.commit()
     

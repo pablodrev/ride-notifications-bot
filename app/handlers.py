@@ -167,11 +167,11 @@ async def edit_location(message: Message, state: FSMContext):
 
 @router.message(EditStates.location)
 async def process_new_location(message: Message, state: FSMContext):
-    new_location = (message.location.longitude, message.location.latitude)
+    new_location = (message.location.latitude, message.location.longitude)
     ride_id = (await state.get_data())['ride_id']
     
     async with async_session() as session:
-        await rq.update_ride(ride_id, {'location': json.dumps(new_location)}, session)
+        await rq.update_ride(ride_id, {'location': json.dumps(new_location)}, session, api_key_2gis=API_KEY_2GIS, api_key_geocoder=API_KEY_GEOCODER)
         
     await state.clear()
     await message.answer("Место отправления обновлено.", reply_markup=kb.main)
@@ -180,18 +180,18 @@ async def process_new_location(message: Message, state: FSMContext):
 @router.message(F.text == "Место назначения", EditStates.parameter_to_edit)
 async def edit_destination(message: Message, state: FSMContext):
     await state.set_state(EditStates.destination)
-    await message.answer("Введите новое место назначения.", reply_markup=ReplyKeyboardRemove())
+    await message.answer('Чтобы отправить место назначение как точку на карте 📌, выберите пункт "Геолокация" во вложениях 📎', reply_markup=ReplyKeyboardRemove())
 
 @router.message(EditStates.destination)
 async def process_new_destination(message: Message, state: FSMContext):
     ride_id = (await state.get_data())['ride_id']
-    new_destination = (message.location.longitude, message.location.latitude)
+    new_destination = (message.location.latitude, message.location.longitude)
 
     async with async_session() as session:
-        await rq.update_ride(ride_id, {'destination': new_destination}, session)
+        await rq.update_ride(ride_id, {'destination': json.dumps(new_destination)}, session, api_key_2gis=API_KEY_2GIS, api_key_geocoder=API_KEY_GEOCODER)
               
     await state.clear()
-    await message.answer(f"Место назначения обновлено на: {new_destination}", reply_markup=kb.main)
+    await message.answer(f"Место назначения обновлено", reply_markup=kb.main)
 
     
     
@@ -210,7 +210,7 @@ async def process_new_arrival_time(message: Message, state: FSMContext):
             return
         
         async with async_session() as session:
-            await rq.update_ride(ride_id, {"arrival_time": rq.parse_time(new_arrival_time)}, session)
+            await rq.update_ride(ride_id, {"arrival_time": rq.parse_time(new_arrival_time)}, session, api_key_2gis=API_KEY_2GIS, api_key_geocoder=API_KEY_GEOCODER)
             
         await state.clear()
         await message.answer("Время прибытия обновлено.", reply_markup=kb.main)
@@ -221,17 +221,27 @@ async def edit_transport(message: Message, state: FSMContext):
     await state.set_state(EditStates.transport)
     await message.answer("Введите новое транспортное средство", reply_markup=kb.transport_types)
 
+# @router.message(EditStates.transport)
+# async def process_new_transport(message: Message, state: FSMContext):
+#         new_transport = message.text
+#         ride_id = (await state.get_data())['ride_id']
+        
+#         async with async_session() as session:
+#             await rq.update_ride(ride_id, {'transport': new_transport}, session)
+            
+#         await state.clear()
+#         await message.answer("Транспортное средство обновлено.", reply_markup=kb.main)
+
 @router.message(EditStates.transport)
 async def process_new_transport(message: Message, state: FSMContext):
         new_transport = message.text
         ride_id = (await state.get_data())['ride_id']
-        
+
         async with async_session() as session:
-            await rq.update_ride(ride_id, {'transport': new_transport}, session)
+            await rq.update_ride(ride_id, {'transport': message.text}, session, api_key_2gis=API_KEY_2GIS, api_key_geocoder=API_KEY_GEOCODER)
             
         await state.clear()
         await message.answer("Транспортное средство обновлено.", reply_markup=kb.main)
-
 
 
 @router.message(F.text == "Время до уведомления", EditStates.parameter_to_edit)
@@ -250,7 +260,7 @@ async def process_new_notify_time_delta(message: Message, state: FSMContext):
         ride_id = (await state.get_data())["ride_id"]
 
         async with async_session() as session:
-            await rq.update_ride(ride_id, {"notify_time_delta": notify_time_delta}, session)
+            await rq.update_ride(ride_id, {"notify_time_delta": notify_time_delta}, session, api_key_2gis=API_KEY_2GIS, api_key_geocoder=API_KEY_GEOCODER)
 
         await state.clear()
         await message.answer("Время до уведомления обновлено.", reply_markup=kb.main)
