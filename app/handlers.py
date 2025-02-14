@@ -64,8 +64,8 @@ user_coordinates = {}
 
 
 @router.message(CommandStart())
-@router.message(choose_mode, F.text == "Назад")
-@router.message(choose_notification_buffer, F.text == "Назад")
+@router.message(choose_mode, F.text == "🔙 Назад")
+@router.message(choose_notification_buffer, F.text == "🔙 Назад")
 async def cmd_start(message: Message, state:FSMContext):
     user_id = message.from_user.id
     logging.info("CHAT ID: " + str(message.chat.id))
@@ -78,7 +78,7 @@ async def cmd_start(message: Message, state:FSMContext):
     await message.answer("👋 Привет! это бот для напоминания о поездках 🗺️\n\nВыбери пункт в меню", reply_markup=kb.main)
 
 
-@router.message(F.text == "Мои поездки")
+@router.message(F.text == "🗒️ Мои поездки")
 async def cmd_my_rides(message: Message, state: FSMContext):
     user_id = message.from_user.id
     
@@ -120,13 +120,13 @@ async def cmd_my_rides(message: Message, state: FSMContext):
 
     
 
-@router.message(choose_mode, F.text == "Редактировать")
+@router.message(choose_mode, F.text == "✏️ Редактировать")
 async def edit_ride(message: Message, state: FSMContext):
      await state.update_data(choose_mode="edit")
      await state.set_state(EditStates.ride_id)
      await message.answer("Введите номер поездки для редактирования✏️", reply_markup=ReplyKeyboardRemove())
 
-@router.message(choose_mode, F.text == "Удалить")
+@router.message(choose_mode, F.text == "🚫 Удалить")
 async def delete_ride(message: Message, state: FSMContext):
      await state.update_data(choose_mode="delete")
      await state.set_state(EditStates.ride_id)
@@ -171,7 +171,7 @@ async def process_edit_ride_id(message: Message, state: FSMContext):
 
 
 
-@router.message(F.text == "Место отправления", EditStates.parameter_to_edit)
+@router.message(F.text == "⏫ Место отправления", EditStates.parameter_to_edit)
 async def edit_location(message: Message, state: FSMContext):
     await state.set_state(EditStates.location)
     await message.answer("Для изменения начальной точки отправьте геолокацию, нажав на кнопку внизу.", reply_markup=kb.location)
@@ -189,7 +189,7 @@ async def process_new_location(message: Message, state: FSMContext):
     await message.answer("Место отправления обновлено.", reply_markup=kb.main)
 
 
-@router.message(F.text == "Место назначения", EditStates.parameter_to_edit)
+@router.message(F.text == "⏬ Место назначения", EditStates.parameter_to_edit)
 async def edit_destination(message: Message, state: FSMContext):
     await state.set_state(EditStates.destination)
     await message.answer('Чтобы отправить место назначение как точку на карте 📌, выберите пункт "Геолокация" во вложениях 📎', reply_markup=ReplyKeyboardRemove())
@@ -207,7 +207,7 @@ async def process_new_destination(message: Message, state: FSMContext):
 
     
     
-@router.message(F.text == "Время прибытия", EditStates.parameter_to_edit)
+@router.message(F.text == "🕑 Время прибытия", EditStates.parameter_to_edit)
 async def edit_arrival_time(message: Message, state: FSMContext):
     await state.set_state(EditStates.arrival_time)
     await message.answer("Введите новое время прибытия.", reply_markup=ReplyKeyboardRemove())
@@ -228,7 +228,7 @@ async def process_new_arrival_time(message: Message, state: FSMContext):
         await message.answer("Время прибытия обновлено.", reply_markup=kb.main)
 
 
-@router.message(F.text == "Транспортное средство", EditStates.parameter_to_edit)
+@router.message(F.text == "🛞 Транспортное средство", EditStates.parameter_to_edit)
 async def edit_transport(message: Message, state: FSMContext):
     await state.set_state(EditStates.transport)
     await message.answer("Введите новое транспортное средство", reply_markup=kb.transport_types)
@@ -256,7 +256,7 @@ async def process_new_transport(message: Message, state: FSMContext):
         await message.answer("Транспортное средство обновлено.", reply_markup=kb.main)
 
 
-@router.message(F.text == "Время до уведомления", EditStates.parameter_to_edit)
+@router.message(F.text == "🔔 Время до уведомления", EditStates.parameter_to_edit)
 async def edit_notify_time_delta(message: Message, state: FSMContext):
     await state.set_state(EditStates.notify_time_delta)
     await message.answer("Введите новое время до уведомления", reply_markup=ReplyKeyboardRemove())
@@ -285,7 +285,7 @@ async def process_new_notify_time_delta(message: Message, state: FSMContext):
 
 
 
-@router.message(F.text == "Новая поездка")
+@router.message(F.text == "🆕 Новая поездка")
 async def cmd_new_ride(message: Message, state: FSMContext):
     await state.set_state(NewRideStates.location)
     await message.answer("Для создания поездки необходимо знать точку отправления ⏫", reply_markup=kb.location)
@@ -303,7 +303,7 @@ async def process_location(message: Message, state: FSMContext):
     await message.answer("Введите место назначения⏬ одим из двух способов:", reply_markup=kb.destination)
 
 
-@router.message(NewRideStates.destination_input, F.text == "Точка на карте")
+@router.message(NewRideStates.destination_input, F.text == "🗺️ Точка на карте")
 async def process_destination_input(message: Message, state: FSMContext):
     await state.update_data(destination_input="location")
 
@@ -312,7 +312,7 @@ async def process_destination_input(message: Message, state: FSMContext):
                          reply_markup=ReplyKeyboardRemove())
 
 
-@router.message(NewRideStates.destination_input, F.text == "Ввести адрес вручную")
+@router.message(NewRideStates.destination_input, F.text == "📝 Ввести адрес вручную")
 async def process_destination_input(message: Message, state: FSMContext):
     await state.update_data(destination_input="text")
 
@@ -360,11 +360,12 @@ async def process_arrival_time(message: Message, state: FSMContext):
 
 @router.message(NewRideStates.transport)
 async def process_transport(message: Message, state: FSMContext):
-    if message.text == "Общественный транспорт":
+    logging.info(message.text)
+    if message.text == "🚌 Общественный транспорт":
         transport_type = "public_transport"
-    elif message.text == "Автомобиль":
+    elif message.text == "🚗 Автомобиль":
         transport_type = "car"
-    elif message.text == "Пешком":
+    elif message.text == "🚶 Пешком":
         transport_type = "walk"
     else:
         await message.answer("Неизвестный тип транспорта", reply_markup=kb.transport_types)
@@ -421,7 +422,7 @@ async def process_notify_time_delta(message: Message, state: FSMContext, schedul
 
 
 
-@router.message(F.text == "Настройки")
+@router.message(F.text == "⚙️ Настройки")
 async def cmd_settings(message: Message, state: FSMContext):
     user_id = message.from_user.id
 

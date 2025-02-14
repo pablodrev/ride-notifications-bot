@@ -116,11 +116,11 @@ async def update_ride(ride_id: int, data: dict, session: AsyncSession, api_key_2
                     'destination': (new_destination[0], new_destination[1]),
                     'transport': update_data.get('transport', ride.transport)
                 }
-                if state_data['transport'] == "Общественный транспорт":
+                if state_data['transport'] == "🚌 Общественный транспорт":
                     transport_type = "public_transport"
-                elif state_data['transport'] == "Автомобиль":
+                elif state_data['transport'] == "🚗 Автомобиль":
                     transport_type = "car"
-                elif state_data['transport'] == "Пешком":
+                elif state_data['transport'] == "🚶 Пешком":
                     transport_type = "walk"
                 route_info = ap.calc_time(api_key_2gis, state_data['location'], state_data['destination'], transport_type)
                 
