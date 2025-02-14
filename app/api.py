@@ -55,10 +55,7 @@ def calc_time(api_key_2gis, origin_coords, destination_coords, transport_type):
                 movements.append(f"{transport} ({distance} м, {duration // 60} мин)")
             else:
                 movements.append(f"{mode} ({distance} м, {duration // 60} мин)")
-
-        #response_message = f"Самый короткий маршрут займет {total_duration // 60} минут:\n"
-        #response_message += " -> ".join(movements)
-        # return response_message
+                
         return {"path": " -> ".join(movements),
             "total_duration": total_duration // 60,}
 
@@ -97,7 +94,7 @@ def calc_time(api_key_2gis, origin_coords, destination_coords, transport_type):
         return {
             "total_duration": total_duration_car,
             "total_distance": total_distance_car,
-            "path": f"Автомобильный маршрут {total_distance_car}"
+            "path": f"Автомобильный маршрут {total_distance_car} м."
         }
 
     elif transport_type == 'walk':
@@ -134,7 +131,7 @@ def calc_time(api_key_2gis, origin_coords, destination_coords, transport_type):
         return {
             "total_duration": total_duration_walk,
             "total_distance": total_distance_walk,
-            "path": f"Пешеходный маршрут {total_distance_walk}"
+            "path": f"Пешеходный маршрут {total_distance_walk} м."
         }
 
 

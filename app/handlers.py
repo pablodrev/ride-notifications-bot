@@ -29,7 +29,8 @@ async def send_scheduled_message(bot, chat_id, text):
 # Проверка введенных данных
 # Помечать прошедшие поездки
 # Красивые иконки
-#
+# Если поездок много, их нельзя поместить в одно сообщение
+# Возможность отправлять место отправления текстом
 # 
 
 class NewRideStates(StatesGroup):
@@ -92,17 +93,28 @@ async def cmd_my_rides(message: Message, state: FSMContext):
         return
 
     answer = 'Ваши сохраненные поездки:\n'
+    old_rides = [ride for ride in user_rides if ride.arrival_time <= datetime.now()]
     for count, ride in enumerate(user_rides, start=1):
-        
-        answer += (
-    f"\n{count}.\n⏫ Место отправления: {ride.location_text}\n"
-    f"⏬ Место назначения: {ride.destination_text}\n"
-    f"🕑 Время прибытия: {ride.arrival_time}\n"
-    f"🛞 Транспортное средство: {ride.transport}\n"
-    f"🔔 Время до уведомления: {ride.notify_time_delta} минут(ы)\n"
-    f"🗺️ Маршрут: {ride.path}\n"
-    f"⌛ Дорога займет: {ride.ride_time} минут(ы)\n"
-)
+        if ride in old_rides:
+            answer += (
+        f"\n{count}. ПРОШЕДШАЯ ПОЕЗДКА\n⏫ Место отправления: {ride.location_text}\n"
+        f"⏬ Место назначения: {ride.destination_text}\n"
+        f"🕑 Время прибытия: {ride.arrival_time}\n"
+        f"🛞 Транспортное средство: {ride.transport}\n"
+        f"🔔 Время до уведомления: {ride.notify_time_delta} минут(ы)\n"
+        f"🗺️ Маршрут: {ride.path}\n"
+        f"⌛ Дорога займет: {ride.ride_time} минут(ы)\n")
+        else:
+            answer += (
+        f"\n{count}.\n⏫ Место отправления: {ride.location_text}\n"
+        f"⏬ Место назначения: {ride.destination_text}\n"
+        f"🕑 Время прибытия: {ride.arrival_time}\n"
+        f"🛞 Транспортное средство: {ride.transport}\n"
+        f"🔔 Время до уведомления: {ride.notify_time_delta} минут(ы)\n"
+        f"🗺️ Маршрут: {ride.path}\n"
+        f"⌛ Дорога займет: {ride.ride_time} минут(ы)\n")
+        if count % 3 == 0:
+            await message.answer(answer, reply_markup=kb.edit_delete_back)
     await message.answer(answer, reply_markup=kb.edit_delete_back)
 
 
@@ -324,18 +336,24 @@ async def process_destination(message: Message, state: FSMContext):
         await state.update_data(destination=(latitude, longitude), destination_text=destination_text)
     
     await state.set_state(NewRideStates.arrival_time)
-    await message.answer("Введите время прибытия 🕑")
+    await message.answer('Введите время прибытия 🕑. Если поездка состоится не сегодня, то укажите дату и время в формате "ММ.ДД чч:мм" (например, 15.02 20:00)')
 
 
 @router.message(NewRideStates.arrival_time)
 async def process_arrival_time(message: Message, state: FSMContext):
     arrival_time_str = message.text
 
-    if not rq.validate_arrival_time(arrival_time_str):
+    try:
+        arrival_time = rq.parse_time(arrival_time_str)
+    except ValueError:
         await message.answer("Неверный формат времени. Используйте чч:мм (например, 14:30)")
-        return  
+        return
+    # if not rq.validate_arrival_time(arrival_time_str):
+    #     await message.answer("Неверный формат времени. Используйте чч:мм (например, 14:30)")
+    #     return  
     
-    await state.update_data(arrival_time=arrival_time_str)
+    # await state.update_data(arrival_time=arrival_time_str)
+    await state.update_data(arrival_time=arrival_time)
     await state.set_state(NewRideStates.transport)
     await message.answer("Выберите транспортное средство 🛞", reply_markup=kb.transport_types)
 
@@ -377,8 +395,9 @@ async def process_notify_time_delta(message: Message, state: FSMContext, schedul
     await state.clear()
 
     # Планируем уведомление
-    notify_time = calc_notification_time(parse_time(state_data["arrival_time"]), int(state_data["ride_time"]), int(state_data["notify_time_delta"]), 10)
-    
+    logging.info(state_data["arrival_time"])
+    notify_time = calc_notification_time(state_data["arrival_time"], int(state_data["ride_time"]), int(state_data["notify_time_delta"]), 10)
+    logging.info(notify_time)
     # Добавляем задачу в планировщик
     scheduler.add_job(
             send_scheduled_message,

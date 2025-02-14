@@ -1,5 +1,5 @@
 from sqlalchemy import (
-    BigInteger, DateTime, String, Integer, ForeignKey, Text, Time
+    BigInteger, DateTime, String, Integer, ForeignKey, Text, Time, Boolean
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_engine
@@ -33,7 +33,8 @@ class Ride(Base):
     ride_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     location: Mapped[str] = mapped_column(String, nullable=False)
     destination: Mapped[str] = mapped_column(String, nullable=False)
-    arrival_time: Mapped[time] = mapped_column(Time, nullable=False)
+    #arrival_time: Mapped[time] = mapped_column(Time, nullable=False)
+    arrival_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     transport: Mapped[str] = mapped_column(String(20), nullable=False)
     notify_time_delta: Mapped[int] = mapped_column(Integer, nullable=False)
     #Добавленные столбцы
@@ -41,7 +42,9 @@ class Ride(Base):
     destination_text: Mapped[str] = mapped_column(String, nullable= True)
     path: Mapped[str] = mapped_column(String, nullable=True)
     ride_time: Mapped[int] = mapped_column(Integer, nullable=True)
-    
+    # is_old: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # in_favorites: Mapped[bool] = mapped_column(Boolean, nullable=False)
+
     datetime_now_utc = datetime.now(timezone.utc)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now(timezone.utc), nullable=False)

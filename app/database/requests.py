@@ -6,7 +6,7 @@ import json
 from sqlalchemy.orm import selectinload
 import re
 from sqlalchemy.exc import IntegrityError
-from datetime import datetime, time
+from datetime import datetime, timedelta, time
 from math import ceil
 
 import app.api as ap
@@ -44,10 +44,10 @@ async def add_ride(tg_id, state_data, session, api_key_2gis):
     location_json = json.dumps(state_data['location'])
     destination_json = json.dumps(state_data['destination'])
     
-    transport_type = state_data["transport"]  
-    arrival_time_str = state_data['arrival_time']
-    
-    arrival_time_obj = parse_time(arrival_time_str)
+    transport_type = state_data["transport"]
+
+    # arrival_time_str = state_data["arrival_time"]
+    # arrival_time_obj = parse_time(arrival_time_str)
     
     route_info = ap.calc_time(api_key_2gis, state_data['location'], state_data['destination'], state_data["transport_api_format"])
 
@@ -55,7 +55,8 @@ async def add_ride(tg_id, state_data, session, api_key_2gis):
         location=location_json,
         destination=destination_json,
         transport=transport_type,
-        arrival_time=arrival_time_obj,
+        # arrival_time=arrival_time_obj,
+        arrival_time = state_data["arrival_time"],
         notify_time_delta=state_data["notify_time_delta"],
         location_text=state_data.get('location_text', 'Неизвестное место отправления'),
         destination_text=state_data.get('destination_text', 'Неизвестное место назначения'),
@@ -131,7 +132,6 @@ async def update_ride(ride_id: int, data: dict, session: AsyncSession, api_key_2
     )
     await session.commit()
     
-    
 async def delete_ride(ride_id: int, session: AsyncSession):
     await session.execute(delete(Ride).where(Ride.ride_id == ride_id))
     await session.commit()
@@ -144,8 +144,20 @@ def validate_arrival_time(time_str: str) -> bool:
 
 
 # Преобразование строки в объект времени
-def parse_time(time_str: str) -> time:
-    return datetime.strptime(time_str, "%H:%M").time()
+# def parse_time(time_str: str) -> time:
+#     return datetime.strptime(time_str, "%H:%M").time()
+
+def parse_time(time_str: str) -> datetime:
+    # Если указана и дата и время
+    now = datetime.now()
+    if len(time_str.split()) == 2:        
+        return datetime.strptime(time_str, r"%d.%m %H:%M").replace(year=now.year)
+    # Если время уже прошло
+    elif datetime.strptime(time_str, "%H:%M").replace(year=now.year, month=now.month, day=now.day) <= datetime.now():
+        return datetime.strptime(time_str, "%H:%M").replace(year=now.year, month=now.month, day=now.day) + timedelta(days=1)
+    # Если сегодня
+    else:
+        return datetime.strptime(time_str, "%H:%M").replace(year=now.year, month=now.month, day=now.day)
 
 def calc_notification_time(arrival_time, ride_time, notify_time_delta, notification_buffer):
     arrival_time_minutes = arrival_time.hour * 60 + arrival_time.minute
@@ -153,5 +165,5 @@ def calc_notification_time(arrival_time, ride_time, notify_time_delta, notificat
     time_to_notify_minutes = arrival_time_minutes - total_ride_length
     notification_time = time(time_to_notify_minutes // 60, time_to_notify_minutes % 60)
 
-    return datetime.combine(datetime.now().date(), notification_time)
+    return datetime.combine(arrival_time.date(), notification_time)
 
